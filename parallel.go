@@ -1,4 +1,46 @@
 // gopp is package restricts max num of parallel processing.
+//
+// Example
+//
+//	// Context
+//	ctx, cancel := context.WithCancel(context.Background())
+//	// can set a timeout for the entire process using context.WithTimeout
+//	//ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+//	defer cancel()
+//
+//	// New
+//	// process result is int (and error)
+//	p := gopp.New[int](
+//		// context
+//		ctx,
+//		// max num of parallel processing is 4
+//		gopp.Procs(4),
+//		// timeout for each process is 3s
+//		gopp.RunnerTimeout(3*time.Second))
+//
+//	// Add Runner
+//	r := gopp.NewRunner[int](func(ctx context.Context) (int, error) {
+//		// heavy process
+//		time.Sleep(time.Second)
+//		return 123, nil
+//	})
+//	for i := 0; i < 100; i++ {
+//		p.Add(r)
+//	}
+//
+//	// Wait and receive results
+//	ress := p.Wait()
+//	for _, res := range ress {
+//		if res.Err != nil {
+//			fmt.Printf("Error: %v\n", res.Err)
+//			continue
+//		}
+//		fmt.Println(res.Value)
+//	}
+//
+//	// Don't reuse p, because it will not working properly.
+//	// If you want to reuse it, please recreate it.
+//	p = gopp.New[int](context.Background(), gopp.Procs(4))
 package gopp
 
 import (
