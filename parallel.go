@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-
-	"golang.org/x/sync/semaphore"
 )
 
 // Parallel restricts max num of parallel processing.
@@ -17,7 +15,7 @@ import (
 // Don't reuse this, because it will not working properly.
 type Parallel[T any] struct {
 	ctx    context.Context
-	sem    *semaphore.Weighted
+	sem    chan struct{}
 	wg     sync.WaitGroup
 	addch  chan Runner[T]
 	resch  chan *Result[T]
@@ -41,7 +39,7 @@ func New[T any](ctx context.Context, opts ...Option) *Parallel[T] {
 
 	p := &Parallel[T]{
 		ctx:    ctx,
-		sem:    semaphore.NewWeighted(int64(o.procs)),
+		sem:    make(chan struct{}, o.procs),
 		wg:     sync.WaitGroup{},
 		addch:  make(chan Runner[T]),
 		resch:  make(chan *Result[T], o.reschbuf),
@@ -77,21 +75,15 @@ func (p *Parallel[T]) loop() {
 				return
 			}
 
-			if err := p.sem.Acquire(p.ctx, 1); err != nil {
-				p.resch <- &Result[T]{
-					Err: fmt.Errorf("failed to acquire from semaphore: %w", err),
-				}
-				return
-			}
-			defer p.sem.Release(1)
-
-			// context check
 			select {
 			case <-p.ctx.Done():
 				p.ctxdone(p.ctx)
 				return
-			default:
+			case p.sem <- struct{}{}:
 			}
+			defer func() {
+				<-p.sem
+			}()
 
 			// timeout
 			var (
