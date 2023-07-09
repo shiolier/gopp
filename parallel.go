@@ -93,7 +93,7 @@ func New[T any](ctx context.Context, opts ...Option) Parallel[T] {
 		sem:    make(chan struct{}, o.procs),
 		wg:     sync.WaitGroup{},
 		addch:  make(chan Runner[T]),
-		resch:  make(chan *Result[T], o.reschbuf),
+		resch:  make(chan *Result[T]),
 		donech: make(chan struct{}, 1),
 		once:   sync.Once{},
 		opt:    o,
