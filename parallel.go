@@ -1,4 +1,46 @@
 // gopp is package restricts max num of parallel processing.
+//
+// Example
+//
+//	// Context
+//	ctx, cancel := context.WithCancel(context.Background())
+//	// can set a timeout for the entire process using context.WithTimeout
+//	//ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+//	defer cancel()
+//
+//	// New
+//	// process result is int (and error)
+//	p := gopp.New[int](
+//		// context
+//		ctx,
+//		// max num of parallel processing is 4
+//		gopp.Procs(4),
+//		// timeout for each process is 3s
+//		gopp.RunnerTimeout(3*time.Second))
+//
+//	// Add Runner
+//	r := gopp.NewRunner[int](func(ctx context.Context) (int, error) {
+//		// heavy process
+//		time.Sleep(time.Second)
+//		return 123, nil
+//	})
+//	for i := 0; i < 100; i++ {
+//		p.Add(r)
+//	}
+//
+//	// Wait and receive results
+//	ress := p.Wait()
+//	for _, res := range ress {
+//		if res.Err != nil {
+//			fmt.Printf("Error: %v\n", res.Err)
+//			continue
+//		}
+//		fmt.Println(res.Value)
+//	}
+//
+//	// Don't reuse p, because it will not working properly.
+//	// If you want to reuse it, please recreate it.
+//	p = gopp.New[int](context.Background(), gopp.Procs(4))
 package gopp
 
 import (
@@ -8,12 +50,21 @@ import (
 	"sync"
 )
 
-// Parallel restricts max num of parallel processing.
-//
-// Don't initialize this struct outside of [New].
+type Parallel[T any] interface {
+	// Add adds Runner(s)
+	Add(rs ...Runner[T]) error
+	// Result returns channel for receiving Result
+	Result() <-chan *Result[T]
+	// Done returns channel that will be closed when all processing is done.
+	Done() <-chan struct{}
+	// Wait blocks until all processing to done, and returns all results.
+	Wait() []*Result[T]
+}
+
+// parallel restricts max num of parallel processing.
 //
 // Don't reuse this, because it will not working properly.
-type Parallel[T any] struct {
+type parallel[T any] struct {
 	ctx    context.Context
 	sem    chan struct{}
 	wg     sync.WaitGroup
@@ -28,7 +79,7 @@ type Parallel[T any] struct {
 var ProcsDefault = 1
 
 // New returns Parallel.
-func New[T any](ctx context.Context, opts ...Option) *Parallel[T] {
+func New[T any](ctx context.Context, opts ...Option) Parallel[T] {
 	o := new(option)
 	for _, opt := range opts {
 		opt(o)
@@ -37,12 +88,12 @@ func New[T any](ctx context.Context, opts ...Option) *Parallel[T] {
 		o.procs = ProcsDefault
 	}
 
-	p := &Parallel[T]{
+	p := &parallel[T]{
 		ctx:    ctx,
 		sem:    make(chan struct{}, o.procs),
 		wg:     sync.WaitGroup{},
 		addch:  make(chan Runner[T]),
-		resch:  make(chan *Result[T], o.reschbuf),
+		resch:  make(chan *Result[T]),
 		donech: make(chan struct{}, 1),
 		once:   sync.Once{},
 		opt:    o,
@@ -52,7 +103,7 @@ func New[T any](ctx context.Context, opts ...Option) *Parallel[T] {
 	return p
 }
 
-func (p *Parallel[T]) loop() {
+func (p *parallel[T]) loop() {
 	for {
 		var r Runner[T]
 		// receive ctx.Done or Runner
@@ -106,7 +157,7 @@ func (p *Parallel[T]) loop() {
 	}
 }
 
-func (p *Parallel[T]) ctxdone(ctx context.Context) {
+func (p *parallel[T]) ctxdone(ctx context.Context) {
 	var t T
 	p.resch <- &Result[T]{
 		Value: t,
@@ -114,7 +165,7 @@ func (p *Parallel[T]) ctxdone(ctx context.Context) {
 	}
 }
 
-func (p *Parallel[T]) alldone() {
+func (p *parallel[T]) alldone() {
 	// receive all Runners
 	for b := true; b; {
 		select {
@@ -128,8 +179,8 @@ func (p *Parallel[T]) alldone() {
 	}
 }
 
-// Add adds Runner(s) to Parallel
-func (p *Parallel[T]) Add(rs ...Runner[T]) error {
+// Add adds Runner(s)
+func (p *parallel[T]) Add(rs ...Runner[T]) error {
 	// context check
 	select {
 	case <-p.ctx.Done():
@@ -157,12 +208,12 @@ func (p *Parallel[T]) Add(rs ...Runner[T]) error {
 }
 
 // Result returns channel for receiving Result.
-func (p *Parallel[T]) Result() <-chan *Result[T] {
+func (p *parallel[T]) Result() <-chan *Result[T] {
 	return p.resch
 }
 
 // Done returns channel that will be closed when all processing is done.
-func (p *Parallel[T]) Done() <-chan struct{} {
+func (p *parallel[T]) Done() <-chan struct{} {
 	p.once.Do(func() {
 		go func() {
 			p.wg.Wait()
@@ -173,7 +224,7 @@ func (p *Parallel[T]) Done() <-chan struct{} {
 }
 
 // Wait blocks until all processing to done, and returns all results.
-func (p *Parallel[T]) Wait() (ret []*Result[T]) {
+func (p *parallel[T]) Wait() (ret []*Result[T]) {
 	for {
 		select {
 		case res := <-p.Result():

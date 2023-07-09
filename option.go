@@ -7,9 +7,8 @@ import (
 
 // option is option for [New].
 type option struct {
-	procs    int
-	timeout  time.Duration
-	reschbuf int
+	procs   int
+	timeout time.Duration
 }
 
 // Option is option for [New].
@@ -33,14 +32,5 @@ func ProcsNumCPU() Option {
 func RunnerTimeout(d time.Duration) Option {
 	return func(o *option) {
 		o.timeout = d
-	}
-}
-
-// ResultChBuf specifies buffer of result channel.
-//
-// Deprecated: [Parallel.Done] fires before receiving all results.
-func ResultChBuf(n int) Option {
-	return func(o *option) {
-		o.reschbuf = n
 	}
 }
